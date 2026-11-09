@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="es" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GhostChat // Zero-Trace Ephemeral Messaging</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        cyber: {
+                            bg: '#090d16',
+                            panel: '#0f172a',
+                            border: '#1e293b',
+                            accent: '#10b981',
+                            accentGlow: '#059669',
+                            danger: '#ef4444',
+                            warning: '#f59e0b',
+                            neon: '#00ffcc'
+                        }
+                    },
+                    fontFamily: {
+                        mono: ['JetBrains Mono', 'Fira Code', 'Courier New', 'monospace'],
+                        sans: ['Inter', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #060911;
+            color: #e2e8f0;
+        }
+        .font-mono-custom {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        /* Custom Scrollbar for Hacker Theme */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #090d16;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #1e293b;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #10b981;
+        }
+        /* Pulse & Glow Effects */
+        .glow-accent {
+            box-shadow: 0 0 15px rgba(16, 185, 129, 0.25);
+        }
+        .glow-danger {
+            box-shadow: 0 0 15px rgba(239, 68, 68, 0.3);
+        }
+        /* Scanline Overlay for Cyber Vibe */
+        .scanlines {
+            background: linear-gradient(
+                rgba(18, 16, 16, 0) 50%, 
+                rgba(0, 0, 0, 0.25) 50%
+            ), linear-gradient(
+                90deg,
+                rgba(255, 0, 0, 0.03),
+                rgba(0, 255, 0, 0.01),
+                rgba(0, 0, 255, 0.03)
+            );
+            background-size: 100% 3px, 6px 100%;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body class="h-screen w-screen overflow-hidden flex flex-col justify-between select-none relative">
+
+    <!-- Scanline Effect (Visual Only) -->
+    <div class="scanlines fixed inset-0 z-50 opacity-40"></div>
+
+    <!-- Notification Toast Box -->
+    <div id="toastContainer" class="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+    <!-- PANIC BLANK OVERLAY (Hidden by default) -->
+    <div id="panicScreen" class="fixed inset-0 bg-black z-[100] hidden flex flex-col items-center justify-center text-gray-600 font-mono-custom">
+        <div class="text-xl mb-2">404 NOT FOUND</div>
+        <div class="text-sm">The requested URL was not found on this server.</div>
+        <button onclick="restoreFromPanic()" class="mt-8 text-xs text-gray-800 hover:text-gray-600 transition">Restore Session</button>
+    </div>
+
+    <!-- HEADER / NAVIGATION -->
+    <header class="bg-cyber-panel border-b border-cyber-border px-4 py-3 flex items-center justify-between z-10 shrink-0">
+        <div class="flex items-center gap-3">
+            <div class="p-2 bg-emerald-500/10 border border-emerald-500/30 rounded-lg text-emerald-400">
+                <i data-lucide="shield-alert" class="w-5 h-5"></i>
+            </div>
+            <div>
+                <h1 class="font-mono-custom font-bold text-lg text-emerald-400 tracking-wider flex items-center gap-2">
+                    GHOST<span class="text-white">CHAT</span>
+                    <span class="text-[10px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800">v2.4 RAM-ONLY</span>
+                </h1>
+                <p class="text-xs text-slate-400 hidden sm:block">Protocolo de Mensajería Efímera y Cero Rastros</p>
+            </div>
+        </div>
+
+        <!-- Privacy Status Badges -->
+        <div class="flex items-center gap-2 sm:gap-4">
+            <div class="hidden md:flex items-center gap-2 px-3 py-1 bg-slate-900 border border-slate-800 rounded-full text-xs text-slate-300">
+                <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span>RAM Memory Only</span>
+            </div>
+            <div class="hidden md:flex items-center gap-2 px-3 py-1 bg-slate-900 border border-slate-800 rounded-full text-xs text-slate-300">
+                <i data-lucide="lock" class="w-3 h-3 text-emerald-400"></i>
+                <span>E2E Simulated</span>
+            </div>
+            
+            <!-- Panic Button -->
+            <button onclick="triggerPanic()" title="Wipe session instantly" 
+                class="px-3 py-1.5 bg-red-950/80 hover:bg-red-900 text-red-400 border border-red-800/80 rounded-lg text-xs font-mono-custom flex items-center gap-1.5 transition glow-danger">
+                <i data-lucide="flame" class="w-4 h-4"></i>
+                <span class="font-bold">PANIC PURGE</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- MAIN APP CONTAINER -->
+    <main class="flex-1 overflow-hidden relative flex flex-col md:flex-row">
+        
+        <!-- SCREEN 1: LOGIN / JOIN ROOM (Shown when not in room) -->
+        <div id="joinScreen" class="absolute inset-0 z-20 bg-cyber-bg flex items-center justify-center p-4 overflow-y-auto">
+            <div class="max-w-md w-full bg-cyber-panel border border-cyber-border rounded-xl p-6 sm:p-8 shadow-2xl relative">
+                
+                <div class="text-center mb-6">
+                    <div class="w-16 h-16 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 rounded-2xl flex items-center justify-center mx-auto mb-4 glow-accent">
+                        <i data-lucide="ghost" class="w-8 h-8"></i>
+                    </div>
+                    <h2 class="text-2xl font-bold font-mono-custom text-white">Iniciar Sesión Anónima</h2>
+                    <p class="text-sm text-slate-400 mt-1">Los datos se almacenan exclusivamente en la memoria RAM de tu navegador.</p>
+                </div>
+
+                <form onsubmit="handleJoinRoom(event)" class="space-y-4">
+                    <div>
+                        <label class="block text-xs font-mono-custom text-slate-400 mb-1">ALIAS / SEUDÓNIMO</label>
+                        <div class="relative">
+                            <i data-lucide="user" class="w-4 h-4 absolute left-3 top-3 text-slate-500"></i>
+                            <input type="text" id="usernameInput" required maxlength="20" placeholder="Ej: User_99x" 
+                                class="w-full bg-slate-900 border border-slate-800 rounded-lg py-2.5 pl-9 pr-3 text-sm text-white focus:outline-none focus:border-emerald-500 font-mono-custom transition">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-mono-custom text-slate-400 mb-1">CÓDIGO DE SALA</label>
+                        <div class="flex gap-2">
+                            <div class="relative flex-1">
+                                <i data-lucide="hash" class="w-4 h-4 absolute left-3 top-3 text-slate-500"></i>
+                                <input type="text" id="roomInput" required placeholder="ghost-8x92k" 
+                                    class="w-full bg-slate-900 border border-slate-800 rounded-lg py-2.5 pl-9 pr-3 text-sm text-white focus:outline-none focus:border-emerald-500 font-mono-custom transition">
+                            </div>
+                            <button type="button" onclick="generateRandomRoom()" 
+                                class="px-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-slate-300 text-xs font-mono-custom transition flex items-center gap-1">
+                                <i data-lucide="shuffle" class="w-3.5 h-3.5"></i>
+                                Crear
+                            </button>
+                        </div>
+                    </div>
+
+                    <button type="submit" 
+                        class="w-full bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold font-mono-custom py-3 rounded-lg text-sm transition glow-accent flex items-center justify-center gap-2 mt-2">
+                        <i data-lucide="key" class="w-4 h-4"></i>
+                        ENTRAR A LA SALA PRIVADA
+                    </button>
+                </form>
+
+                <!-- Privacy Guarantee Checklist -->
+                <div class="mt-6 pt-6 border-t border-slate-800/80 space-y-2">
+                    <div class="text-[11px] font-mono-custom text-slate-500 uppercase tracking-wider mb-2">Garantías de Privacidad:</div>
+                    <div class="flex items-center gap-2 text-xs text-slate-400">
+                        <i data-lucide="check-circle-2" class="w-3.5 h-3.5 text-emerald-400"></i>
+                        <span>Cero base de datos / Sin registros en servidor</span>
+                    </div>
+                    <div class="flex items-center gap-2 text-xs text-slate-400">
+                        <i data-lucide="check-circle-2" class="w-3.5 h-3.5 text-emerald-400"></i>
+                        <span>Sin LocalStorage ni Cookies de rastreo</span>
+                    </div>
+                    <div class="flex items-center gap-2 text-xs text-slate-400">
+                        <i data-lucide="check-circle-2" class="w-3.5 h-3.5 text-emerald-400"></i>
+                        <span>Intercambio P2P local (BroadcastChannel)</span>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- SCREEN 2: CHAT INTERFACE -->
+        <div id="chatScreen" class="flex-1 flex flex-col md:flex-row h-full overflow-hidden hidden">
+            
+            <!-- LEFT PANEL / ROOM INFO & CONTROLS -->
+            <div class="w-full md:w-64 bg-cyber-panel border-b md:border-b-0 md:border-r border-cyber-border p-4 flex flex-col justify-between gap-4 shrink-0">
+                <div>
+                    <!-- Room Info Box -->
+                    <div class="mb-4 p-3 bg-slate-900 border border-slate-800 rounded-lg">
+                        <div class="text-[10px] font-mono-custom text-slate-500 uppercase">SALA ACTUAL</div>
+                        <div class="flex items-center justify-between mt-1">
+                            <span id="activeRoomCode" class="font-mono-custom font-bold text-emerald-400 truncate text-sm">----</span>
+                            <button onclick="copyRoomLink()" title="Copiar código de sala" class="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition">
+                                <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- User Info -->
+                    <div class="mb-4 p-3 bg-slate-900 border border-slate-800 rounded-lg">
+                        <div class="text-[10px] font-mono-custom text-slate-500 uppercase">TU ALIAS ANÓNIMO</div>
+                        <div class="flex items-center gap-2 mt-1">
+                            <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                            <span id="activeUsername" class="font-mono-custom font-medium text-slate-200 text-sm truncate">--</span>
+                        </div>
+                    </div>
+
+                    <!-- Self Destruct Setting -->
+                    <div class="p-3 bg-slate-900 border border-slate-800 rounded-lg">
+                        <label class="block text-[10px] font-mono-custom text-slate-500 uppercase mb-2">AUTODESTRUCCIÓN DE MENSAJES</label>
+                        <select id="timerSelect" onchange="updateDestructTimer(this.value)" 
+                            class="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1.5 text-xs text-slate-200 font-mono-custom focus:outline-none focus:border-emerald-500">
+                            <option value="0">Desactivado</option>
+                            <option value="10">10 Segundos</option>
+                            <option value="30">30 Segundos</option>
+                            <option value="60">1 Minuto</option>
+                            <option value="300">5 Minutos</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Active Peers & Exit -->
+                <div class="space-y-2">
+                    <div class="p-2.5 bg-slate-900/50 border border-slate-800/60 rounded-lg text-xs font-mono-custom text-slate-400 flex items-center justify-between">
+                        <span class="flex items-center gap-1.5">
+                            <i data-lucide="users" class="w-3.5 h-3.5 text-emerald-400"></i>
+                            Pestañas activas:
+                        </span>
+                        <span id="peerCountBadge" class="text-emerald-400 font-bold">1</span>
+                    </div>
+
+                    <button onclick="leaveRoom()" class="w-full py-2 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 rounded-lg text-xs font-mono-custom transition flex items-center justify-center gap-2">
+                        <i data-lucide="log-out" class="w-3.5 h-3.5"></i>
+                        SALIR Y BORRAR SALA
+                    </button>
+                </div>
+            </div>
+
+            <!-- CHAT MAIN FEED -->
+            <div class="flex-1 flex flex-col h-full bg-cyber-bg relative overflow-hidden">
+                
+                <!-- Security Header Bar -->
+                <div class="px-4 py-2 bg-slate-950/60 border-b border-cyber-border/60 flex items-center justify-between text-[11px] font-mono-custom text-slate-400">
+                    <div class="flex items-center gap-2">
+                        <i data-lucide="shield-check" class="w-3.5 h-3.5 text-emerald-400"></i>
+                        <span>Estado: <span class="text-emerald-400">Canal Seguro Local (RAM Only)</span></span>
+                    </div>
+                    <div class="hidden sm:block text-slate-500">
+                        Session Key: <span id="sessionKeySim" class="text-slate-400">0x8F9...A3</span>
+                    </div>
+                </div>
+
+                <!-- Messages Feed -->
+                <div id="messageFeed" class="flex-1 overflow-y-auto p-4 space-y-3">
+                    <!-- Dynamic Messages will be injected here -->
+                </div>
+
+                <!-- Input Area -->
+                <div class="p-3 sm:p-4 bg-cyber-panel border-t border-cyber-border">
+                    <form onsubmit="handleSendMessage(event)" class="flex gap-2">
+                        <input type="text" id="messageInput" required autocomplete="off" placeholder="Escribe un mensaje privado..." 
+                            class="flex-1 bg-slate-900 border border-slate-800 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500 font-sans transition">
+                        
+                        <button type="submit" 
+                            class="px-5 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold font-mono-custom rounded-lg transition flex items-center gap-2 shrink-0">
+                            <span class="hidden sm:inline text-xs">ENVIAR</span>
+                            <i data-lucide="send" class="w-4 h-4"></i>
+                        </button>
+                    </form>
+                    <div class="mt-2 flex justify-between items-center text-[10px] font-mono-custom text-slate-500 px-1">
+                        <span>Pulsar Enter para enviar</span>
+                        <span id="destructStatusText">Autodestrucción: Off</span>
+                    </div>
+                </div>
+
+            </div>
+
+        </div>
+
+    </main>
+
+    <!-- FOOTER -->
+    <footer class="bg-cyber-panel border-t border-cyber-border px-4 py-2 text-center text-[11px] font-mono-custom text-slate-500 z-10 shrink-0">
+        GhostChat Ephemeral System // No Cookies // Zero Persistence // Closing tab destroys history
+    </footer>
+
+    <!-- JAVASCRIPT LOGIC (Strictly RAM-Only State) -->
+    <script>
+        // RAM-only Application State
+        const state = {
+            username: '',
+            roomCode: '',
+            messages: [],
+            destructTimerSeconds: 0,
+            broadcastChannel: null,
+            peerId: Math.random().toString(36).substring(2, 9)
+        };
+
+        // Initialize Lucide Icons
+        lucide.createIcons();
+
+        // Generate Random Room Code
+        function generateRandomRoom() {
+            const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+            let code = 'ghost-';
+            for (let i = 0; i < 5; i++) {
+                code += chars.charAt(Math.floor(Math.random() * chars.length));
+            }
+            document.getElementById('roomInput').value = code;
+        }
+
+        // Join Room Handler
+        function handleJoinRoom(e) {
+            e.preventDefault();
+            const username = document.getElementById('usernameInput').value.trim();
+            const room = document.getElementById('roomInput').value.trim().toLowerCase();
+
+            if (!username || !room) return;
+
+            state.username = username;
+            state.roomCode = room;
+
+            // Setup Broadcast Channel for local peer communication across tabs
+            setupBroadcastChannel();
+
+            // Update UI Elements
+            document.getElementById('activeRoomCode').innerText = state.roomCode;
+            document.getElementById('activeUsername').innerText = state.username;
+            document.getElementById('sessionKeySim').innerText = '0x' + Array.from({length: 8}, () => Math.floor(Math.random()*16).toString(16)).join('').toUpperCase();
+
+            // Switch Screen
+            document.getElementById('joinScreen').classList.add('hidden');
+            document.getElementById('chatScreen').classList.remove('hidden');
+
+            // Add System Message
+            addSystemMessage(`Te has unido a la sala [${state.roomCode}] como ${state.username}. Memoria de sesión activa.`);
+            
+            // Ping other tabs to announce presence
+            postBroadcastMessage({ type: 'PEER_JOIN', peerId: state.peerId, username: state.username });
+
+            showToast('Conectado a la sala efímera', 'success');
+        }
+
+        // Setup BroadcastChannel API for real-time multi-tab sync
+        function setupBroadcastChannel() {
+            if (state.broadcastChannel) {
+                state.broadcastChannel.close();
+            }
+
+            state.broadcastChannel = new BroadcastChannel(`ghostchat_room_${state.roomCode}`);
+
+            state.broadcastChannel.onmessage = (event) => {
+                const data = event.data;
+                if (!data) return;
+
+                switch (data.type) {
+                    case 'CHAT_MESSAGE':
+                        receiveMessage(data.payload);
+                        break;
+                    case 'PEER_JOIN':
+                        addSystemMessage(`${data.username} se ha unido al canal.`);
+                        break;
+                    case 'PEER_LEAVE':
+                        addSystemMessage(`Un usuario abandonó la sala.`);
+                        break;
+                    case 'PURGE_ROOM':
+                        purgeLocalState();
+                        showToast('La sala fue purgada por otro usuario', 'danger');
+                        break;
+                }
+            };
+        }
+
+        function postBroadcastMessage(data) {
+            if (state.broadcastChannel) {
+                state.broadcastChannel.postMessage(data);
+            }
+        }
+
+        // Send Message
+        function handleSendMessage(e) {
+            e.preventDefault();
+            const input = document.getElementById('messageInput');
+            const text = input.value.trim();
+            if (!text) return;
+
+            const msgData = {
+                id: 'msg_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+                sender: state.username,
+                text: text,
+                timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                destructSeconds: state.destructTimerSeconds,
+                isSelf: true
+            };
+
+            // Store in RAM
+            state.messages.push(msgData);
+
+            // Render locally
+            renderMessage(msgData);
+
+            // Broadcast to other tabs
+            postBroadcastMessage({
+                type: 'CHAT_MESSAGE',
+                payload: { ...msgData, isSelf: false }
+            });
+
+            input.value = '';
+
+            // Handle Destruct timer if set
+            if (msgData.destructSeconds > 0) {
+                scheduleMessageDestruction(msgData.id, msgData.destructSeconds);
+            }
+        }
+
+        // Receive Message from Broadcast
+        function receiveMessage(msgData) {
+            state.messages.push(msgData);
+            renderMessage(msgData);
+
+            if (msgData.destructSeconds > 0) {
+                scheduleMessageDestruction(msgData.id, msgData.destructSeconds);
+            }
+        }
+
+        // Render Message UI
+        function renderMessage(msg) {
+            const feed = document.getElementById('messageFeed');
+            const msgEl = document.createElement('div');
+            msgEl.id = msg.id;
+            msgEl.className = `flex flex-col ${msg.isSelf ? 'items-end' : 'items-start'} space-y-1`;
+
+            const isSelf = msg.isSelf;
+            const bubbleBg = isSelf 
+                ? 'bg-emerald-950/80 border-emerald-800/80 text-emerald-100' 
+                : 'bg-slate-900 border-slate-800 text-slate-200';
+
+            msgEl.innerHTML = `
+                <div class="flex items-center gap-2 text-[10px] font-mono-custom text-slate-500 px-1">
+                    <span class="${isSelf ? 'text-emerald-400 font-bold' : 'text-slate-400'}">${escapeHtml(msg.sender)}</span>
+                    <span>•</span>
+                    <span>${msg.timestamp}</span>
+                    ${msg.destructSeconds > 0 ? `<span class="text-amber-400 flex items-center gap-0.5"><i data-lucide="timer" class="w-3 h-3"></i> <span id="timer_${msg.id}">${msg.destructSeconds}s</span></span>` : ''}
+                </div>
+                <div class="max-w-[85%] sm:max-w-[70%] px-4 py-2.5 rounded-xl border text-sm font-sans ${bubbleBg} shadow-md break-words relative group">
+                    ${escapeHtml(msg.text)}
+                </div>
+            `;
+
+            feed.appendChild(msgEl);
+            feed.scrollTop = feed.scrollHeight;
+            lucide.createIcons();
+        }
+
+        // System Info Message
+        function addSystemMessage(text) {
+            const feed = document.getElementById('messageFeed');
+            const sysEl = document.createElement('div');
+            sysEl.className = 'flex justify-center my-2';
+            sysEl.innerHTML = `
+                <div class="px-3 py-1 bg-slate-900/80 border border-slate-800 rounded-full text-[11px] font-mono-custom text-slate-400 flex items-center gap-1.5">
+                    <i data-lucide="info" class="w-3 h-3 text-emerald-400"></i>
+                    <span>${escapeHtml(text)}</span>
+                </div>
+            `;
+            feed.appendChild(sysEl);
+            feed.scrollTop = feed.scrollHeight;
+            lucide.createIcons();
+        }
+
+        // Schedule Message Destruction
+        function scheduleMessageDestruction(msgId, seconds) {
+            let timeLeft = seconds;
+            const timerSpan = document.getElementById(`timer_${msgId}`);
+
+            const interval = setInterval(() => {
+                timeLeft--;
+                if (timerSpan) {
+                    timerSpan.innerText = `${timeLeft}s`;
+                }
+
+                if (timeLeft <= 0) {
+                    clearInterval(interval);
+                    const el = document.getElementById(msgId);
+                    if (el) {
+                        el.classList.add('transition-opacity', 'duration-500', 'opacity-0');
+                        setTimeout(() => {
+                            el.remove();
+                            // Remove from RAM state
+                            state.messages = state.messages.filter(m => m.id !== msgId);
+                        }, 500);
+                    }
+                }
+            }, 1000);
+        }
+
+        // Update Self Destruct Setting
+        function updateDestructTimer(val) {
+            state.destructTimerSeconds = parseInt(val, 10);
+            const statusText = document.getElementById('destructStatusText');
+            statusText.innerText = state.destructTimerSeconds > 0 
+                ? `Autodestrucción: ${state.destructTimerSeconds}s por mensaje` 
+                : 'Autodestrucción: Off';
+        }
+
+        // Copy Room Link / Code
+        function copyRoomLink() {
+            const tempInput = document.createElement('input');
+            tempInput.value = state.roomCode;
+            document.body.appendChild(tempInput);
+            tempInput.select();
+            document.execCommand('copy');
+            document.body.removeChild(tempInput);
+
+            showToast('Código de sala copiado', 'info');
+        }
+
+        // Panic Button Trigger (Wipe All Memory Instantly)
+        function triggerPanic() {
+            // Post purge to other connected tabs in same room
+            postBroadcastMessage({ type: 'PURGE_ROOM' });
+
+            purgeLocalState();
+            
+            // Show Blank Panic Overlay
+            document.getElementById('panicScreen').classList.remove('hidden');
+        }
+
+        function restoreFromPanic() {
+            document.getElementById('panicScreen').classList.add('hidden');
+        }
+
+        // Leave Room / Reset State
+        function leaveRoom() {
+            postBroadcastMessage({ type: 'PEER_LEAVE' });
+            purgeLocalState();
+            showToast('Has abandonado la sala. Historial borrado.', 'info');
+        }
+
+        // Purge State in RAM
+        function purgeLocalState() {
+            state.username = '';
+            state.roomCode = '';
+            state.messages = [];
+            
+            if (state.broadcastChannel) {
+                state.broadcastChannel.close();
+                state.broadcastChannel = null;
+            }
+
+            document.getElementById('messageFeed').innerHTML = '';
+            document.getElementById('joinScreen').classList.remove('hidden');
+            document.getElementById('chatScreen').classList.add('hidden');
+            document.getElementById('usernameInput').value = '';
+            document.getElementById('roomInput').value = '';
+        }
+
+        // Toast Notifications
+        function showToast(msg, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            
+            const bgClass = type === 'danger' ? 'bg-red-950 border-red-800 text-red-300' : 'bg-slate-900 border-slate-700 text-slate-200';
+
+            toast.className = `px-4 py-2.5 rounded-lg border text-xs font-mono-custom shadow-xl flex items-center gap-2 pointer-events-auto transition duration-300 ${bgClass}`;
+            toast.innerHTML = `
+                <i data-lucide="${type === 'danger' ? 'alert-triangle' : 'check-circle'}" class="w-4 h-4 text-emerald-400"></i>
+                <span>${escapeHtml(msg)}</span>
+            `;
+
+            container.appendChild(toast);
+            lucide.createIcons();
+
+            setTimeout(() => {
+                toast.classList.add('opacity-0');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        // Utility: HTML Escape
+        function escapeHtml(str) {
+            return str.replace(/[&<>"']/g, function(m) {
+                return {
+                    '&': '&amp;',
+                    '<': '&lt;',
+                    '>': '&gt;',
+                    '"': '&quot;',
+                    "'": '&#039;'
+                }[m];
+            });
+        }
+
+        // Auto-generate random room key on initial load
+        window.onload = function() {
+            generateRandomRoom();
+        }
+    </script>
+</body>
+</html>
